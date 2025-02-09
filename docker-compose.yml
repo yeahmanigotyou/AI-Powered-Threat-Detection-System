@@ -1,0 +1,8 @@
+services:
+  tshark:
+    build: .
+    container_name: tshark_capture
+    network_mode: "host"
+    privileged: true
+    volumes:
+      - ./data:/data
