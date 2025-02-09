@@ -7,6 +7,7 @@
 # Ignore packet capture files (optional, since they may be large)
 captures/*.pcap
 captures/
+*.pcap
 
 # Ignore VSCode settings (optional)
 .vscode/
