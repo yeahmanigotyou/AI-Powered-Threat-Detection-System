@@ -9,11 +9,11 @@ class TsharkWrapper:
 
      def capture_packets(self, interface: str) -> List[Dict]:
          try:
-              self.logger.info(f"Starting Packet Capture")
+              self.logger.info("Capturing Packets...")
               capture = pyshark.LiveCapture(interface=interface)
               packets = []
               
-              for packet in capture.sniff_continuously(packet_count=1000):
+              for packet in capture.sniff_continuously(packet_count=1000):                # Might be better to grab all data then convert instead of grab,convert,grab,convert... 
                    packet_dict = self._convert_packet_to_dict_(packet)
                    packets.append(packet_dict)
                    

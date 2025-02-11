@@ -25,21 +25,18 @@ def main():
     logger = logging.getLogger('main')
     
     ensure_directories()
-    
     args = parse_arguments()
     
-    try:
-        monitor = NetworkMonitor(
-            interface=args.interface,
-            target=args.target,
-        )
+    monitor = NetworkMonitor(interface=args.interface, target=args.target)
+        
+    try:    
         monitor.start_monitoring()
     except KeyboardInterrupt as e:
         logger.info(f'Monitoring stopped by user.')
         sys.exit(0)
     except Exception as e:
         logger.error(f'Monitoring failed (ERROR): {e}')
-        sys.exit(0)
+        sys.exit(1)
     
 if __name__ == "__main__":
     main()
