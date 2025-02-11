@@ -31,12 +31,12 @@ class NmapWrapper:
         
         for host in self.scanner.all_hosts():
             host_data = {
-                'status': self.scanner[host].state(),
-                'hostname': self._get_hostname(host),
-                'os': self._get_os_info(host),
-                'ports': self._get_port_info(host),
-                'services': self._get_service_info(host),
-                'vulnerabilities': self._check_common_vulnerabilities(host)
+                'status': self.scanner[host].state()
+                #'hostname': self._get_hostname(host),
+                #'os': self._get_os_info(host),
+                #'ports': self._get_port_info(host),
+                #'services': self._get_service_info(host),
+                #'vulnerabilities': self._check_common_vulnerabilities(host)
             }
             results[host] = host_data
             

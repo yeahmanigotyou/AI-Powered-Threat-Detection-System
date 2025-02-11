@@ -21,7 +21,7 @@ def ensure_directories():
 
 def save_json_data(data: Dict[str, Any], filename: str):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    full_filename = f'date/{filename}_{timestamp}.json'
+    full_filename = f'data/{filename}_{timestamp}.json'
     
     with open(full_filename, 'w') as f:
         json.dump(data, f, indent=4)
