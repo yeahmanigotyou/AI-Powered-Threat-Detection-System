@@ -32,7 +32,3 @@ class NetworkMonitor:
             self.logger.error(f'Error during monitoring: {str(e)}')
             raise
         #Analyize the Results
-        
-        
-        
-        return packets, scan_results
