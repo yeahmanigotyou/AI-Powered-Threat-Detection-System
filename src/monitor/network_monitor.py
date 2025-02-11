@@ -1,26 +1,29 @@
-from pathlib import Path
-import logging
-from datetime import datetime
 from src.tools.tshark_wrapper import TsharkWrapper
 from src.tools.nmap_wrapper import NmapWrapper
 from src.monitor.packet_analysis import PacketAnalyzer
+from src.monitor.utils.utils import setup_logger
 
 class NetworkMonitor:
-    def __init__(self, interface="eth0", output_dir="logs"):
+    def __init__(self, interface: str, target: str):
         self.interface = interface
-        self.output_dir = Path(output_dir)
-        
-        self.tshark = TsharkWrapper(interface)
+        self.target = target
+        self.tshark = TsharkWrapper()
         self.nmap = NmapWrapper()
         self.analyzer = PacketAnalyzer()
+        self.logger = setup_logger("NetworkMonitor")
+    
         
-    def start_monitoring(self, target_network, duration="300"):
-        #Run Tshark Network Traffic Scan for Packet Capturing
-        pcap_file = self.tshark.capture_traffic(duration)
+    def start_monitoring(self):
+        #Run Tshark Network Traffic Scan for Packet Capturing and Network Mapping Scan for Active Hosts and Open Ports
+        try:
+            self.logger.info(f"Starting network monitoring on interface: {self.interface}")
+            packets = self.tshark.capture_packets(self.interface)
         
-        #Run Nmap Network Mapping Scan for Active Hosts and Open Ports
-        scan_results = self.nmap.scan_network(target_network)
-        
+            self.logger.info(f"Starting network scan on target: {self.target}")
+            scan_results = self.nmap.scan_network(self.target)
+        except Exception as e:
+            self.logger.error(f'Error during monitoring: {str(e)}')
+            raise
         #Analyize the Results
         
-        return pcap_file, scan_results
+        return packets, scan_results

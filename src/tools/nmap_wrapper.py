@@ -1,10 +1,10 @@
 import nmap
-import logging
+from src.monitor.utils.utils import setup_logger
 
 class NmapWrapper:
     def __init__(self):
         self.scanner = nmap.PortScanner()
-        self.logger = logging.getLogger(__name__)
+        self.logger = setup_logger("Nmap")
         
     def scan_network(self, target_network):
         try:
@@ -13,5 +13,5 @@ class NmapWrapper:
                 arguments='-sS -sV -O --script=default'
             )
         except Exception as e:
-            self.logger.error(f"Scan Failed: {e}")
+            self.logger.error(f"Network Scan Failed: {str(e)}")
             raise

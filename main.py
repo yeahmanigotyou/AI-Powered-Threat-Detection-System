@@ -1,37 +1,45 @@
 from src.monitor.network_monitor import NetworkMonitor
+from src.monitor.utils import ensure_directories
 import logging
 import argparse
+import sys
 
 def setup_logging ():
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
-            logging.FileHandler('logs/network_monitor.log'),
-            logging.StreamHandler()
+            logging.FileHandler('logs/system.log'),
+            logging.StreamHandler(sys.stdout)
         ]
     )
     
-def main():
+def parse_arguments():
     parser = argparse.ArgumentParser(description='Network Monitoring Tools')
-    parser.add_argument('--interface', default='eth0', help='Network interface to monitor')
-    parser.add_argument('--target', default='192.168.1.0/24', help='Target network to scan')
-    parser.add_argument('--duration', type=int, default=300, help="Duration of monitoring in seconds")
-    
-    args = parser.parse_args()
-    
+    parser.add_argument('--interface', '-i', default='eth0', help='Network interface to monitor')
+    parser.add_argument('--target', 't', default='192.168.1.0/24', help='Target network to scan')
+    return parser.parse_args()
+ 
+def main():       
     setup_logging()
+    logger = logging.getLogger('main')
+    
+    ensure_directories()
+    
+    args = parse_arguments()
     
     try:
-        monitor = NetworkMonitor(interface=args.interface)
-        results = monitor.start_monitoring(
-            target_network=args.target,
-            duration=args.duration
+        monitor = NetworkMonitor(
+            interface=args.interface,
+            target=args.target,
         )
-        print("Monitoring is complete. Results are saved in logs.")
+        monitor.start_monitoring()
+    except KeyboardInterrupt as e:
+        logger.info(f'Monitoring stopped by user.')
+        sys.exit(0)
     except Exception as e:
-        logging.error(f'Monitoring failed: {e}')
-        raise
+        logger.error(f'Monitoring failed (ERROR): {e}')
+        sys.exit(0)
     
 if __name__ == "__main__":
     main()

@@ -1,13 +1,15 @@
 import pyshark
 from typing import List, Dict 
-from utils.packet_formatting import PacketFormatter
+from monitor.utils.utils import PacketFormatter
+from src.monitor.utils.utils import setup_logger
 
 class TsharkWrapper:
      def __init__(self):
           self.default_options = ['-T', 'json']
           self.format = PacketFormatter()
+          self.logger = setup_logger("Tshark")
 
-     def capture_packets(self, interface: str, duration: int = 60) -> List[Dict]:
+     def capture_packets(self, interface: str) -> List[Dict]:
          try:
               capture = pyshark.LiveCapture(interface=interface)
               packets = []
@@ -21,4 +23,5 @@ class TsharkWrapper:
                    
               return packets
          except Exception as e:
-              raise Exception(f"Failed to Capture Packets: {str(e)}")
+               self.logger.error(f"Failed to Capture Packets: {str(e)}")
+               raise
