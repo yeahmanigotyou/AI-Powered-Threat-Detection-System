@@ -1,5 +1,5 @@
 from src.monitor.network_monitor import NetworkMonitor
-from src.monitor.utils import ensure_directories
+from src.monitor.utils.utils import ensure_directories
 import logging
 import argparse
 import sys
@@ -16,8 +16,8 @@ def setup_logging ():
     
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Network Monitoring Tools')
-    parser.add_argument('--interface', '-i', default='eth0', help='Network interface to monitor')
-    parser.add_argument('--target', 't', default='192.168.1.0/24', help='Target network to scan')
+    parser.add_argument('--interface', '-i', default='Ethernet', help='Network interface to monitor')
+    parser.add_argument('--target', '-t', default='192.168.1.0/24', help='Target network to scan')
     return parser.parse_args()
  
 def main():       

@@ -1,6 +1,6 @@
 from src.tools.tshark_wrapper import TsharkWrapper
 from src.tools.nmap_wrapper import NmapWrapper
-from src.monitor.packet_analysis import PacketAnalyzer
+#from src.monitor.packet_analysis import PacketAnalyzer
 from src.monitor.utils.utils import setup_logger, save_json_data
 
 class NetworkMonitor:
@@ -9,7 +9,7 @@ class NetworkMonitor:
         self.target = target
         self.tshark = TsharkWrapper()
         self.nmap = NmapWrapper()
-        self.analyzer = PacketAnalyzer()
+        #self.analyzer = PacketAnalyzer()
         self.logger = setup_logger("NetworkMonitor")
     
         

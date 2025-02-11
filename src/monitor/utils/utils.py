@@ -17,7 +17,7 @@ def setup_logger(name: str) -> logging.Logger:
 def ensure_directories():
     directories = ['logs','data','models']
     for directory in directories:
-        os.mkdirs(directory, exists_ok=True)
+        os.makedirs(directory, exist_ok=True)
 
 def save_json_data(data: Dict[str, Any], filename: str):
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')

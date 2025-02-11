@@ -9,6 +9,7 @@ class TsharkWrapper:
 
      def capture_packets(self, interface: str) -> List[Dict]:
          try:
+              self.logger.info(f"Starting Packet Capture")
               capture = pyshark.LiveCapture(interface=interface)
               packets = []
               
