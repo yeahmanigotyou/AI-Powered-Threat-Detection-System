@@ -1,9 +1,9 @@
 from pathlib import Path
 import logging
 from datetime import datetime
-from tshark_wrapper import TsharkWrapper
-from nmap_wrapper import NmapWrapper
-from packet_analysis import PacketAnalyzer
+from src.tools.tshark_wrapper import TsharkWrapper
+from src.tools.nmap_wrapper import NmapWrapper
+from src.monitor.packet_analysis import PacketAnalyzer
 
 class NetworkMonitor:
     def __init__(self, interface="eth0", output_dir="logs"):
