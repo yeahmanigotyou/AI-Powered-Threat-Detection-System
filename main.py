@@ -31,8 +31,9 @@ def main():
         
     try:    
         monitor.start_monitoring()
+        logger.info('Network Monitoring has concluded.')
     except KeyboardInterrupt as e:
-        logger.info(f'Monitoring stopped by user.')
+        logger.info('Monitoring stopped by user.')
         sys.exit(0)
     except Exception as e:
         logger.error(f'Monitoring failed (ERROR): {e}')

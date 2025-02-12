@@ -27,14 +27,14 @@ class NetworkMonitor:
             packets = self.tshark.capture_packets(self.interface)
             self.privilege_manager.register_process(packets)
             
-            self.logger.info(f'Saving packet data in json form.')
+            self.logger.info(f'Finished. Saving packet data in json formmat.')
             save_json_data(packets, 'captured_packets')
         
             self.logger.info(f"Starting network scan on target: {self.target}")
             scan_results = self.nmap.scan_network(self.target)
             self.privilege_manager.register_process(scan_results)
             
-            self.logger.info(f'Saving network scan in json form.')
+            self.logger.info(f'Finished. Saving network scan in json formmat.')
             save_json_data(scan_results, 'nmap_scan')
             
         except Exception as e:
