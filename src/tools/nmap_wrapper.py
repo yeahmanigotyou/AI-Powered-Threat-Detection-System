@@ -1,5 +1,5 @@
 import nmap
-from typing import Dict
+from typing import Dict, List, Any
 from src.monitor.utils.utils import setup_logger
 
 class NmapWrapper:
@@ -31,15 +31,48 @@ class NmapWrapper:
         
         for host in self.scanner.all_hosts():
             host_data = {
-                'status': self.scanner[host].state()
-                #'hostname': self._get_hostname(host),
-                #'os': self._get_os_info(host),
-                #'ports': self._get_port_info(host),
-                #'services': self._get_service_info(host),
-                #'vulnerabilities': self._check_common_vulnerabilities(host)
+                'host': host,
+                'status': self.scanner[host].state(),
+                'hostname': self._get_hostname(host),
+                'os': self._get_os_info(host),
+                'protocols': self._get_protocols_info(host),
+                'vulnerabilities': self._check_common_vulnerabilities(host)
             }
             results[host] = host_data
             
         return results
+    
+    def _get_hostname(self, host: str) -> str:
+        hostname = self.scanner[host].hostname()
+        return hostname if hostname else "N/A"
+    
+    def _get_os_info(self, host: str) -> Dict:
+        os_info = {}
+        if 'osmatch' in self.scanner[host]:
+            os_info = self.scanner[host]['osmatch'][0] if self.scanner[host]['osmatch'] else {}
+        return os_info
+    
+    def _get_protocols_info(self, host: str) -> Dict:
+        protocols_info = {}
+        for protocol in self.scanner[host].all_protocols():
+            protocols_info[protocol] = {}
+            ports = self.scanner[host][protocol].keys()
+            for port in ports:
+                protocols_info[protocol][port] = self.scanner[host][protocol][port]
+        return protocols_info
+    
+    def _check_common_vulnerabilities(self, host: str) -> List[Dict[str, Any]]:
+        vulnerabilities = []
+        
+        if 'script' in self.scanner[host]:
+            for script_id, script_output, in self.scanner[host]['script'].items():
+                vulnerabilities.append({
+                    'id': script_id,
+                    'output': script_output
+                })
+        
+        return vulnerabilities
+    
+    
     
 #Add more varity of scans as well types
