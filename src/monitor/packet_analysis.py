@@ -1,0 +1,2 @@
+class PackAnalizer:
+    pass
