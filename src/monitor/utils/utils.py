@@ -20,7 +20,7 @@ def ensure_directories():
         os.makedirs(directory, exist_ok=True)
 
 def save_json_data(data: Dict[str, Any], filename: str):
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
     full_filename = f'data/{filename}_{timestamp}.json'
     
     with open(full_filename, 'w') as f:
