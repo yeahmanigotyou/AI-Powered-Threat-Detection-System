@@ -9,17 +9,18 @@ class TsharkWrapper:
 
      def capture_packets(self, interface: str) -> List[Dict]:
          try:
-              self.logger.info(f"Starting Packet Capture")
+              self.logger.info("Capturing Packets...")
               capture = pyshark.LiveCapture(interface=interface)
               packets = []
               
-              for packet in capture.sniff_continuously(packet_count=1000):
+              for packet in capture.sniff_continuously(packet_count=500):                # Might be better to grab all data then convert instead of grab,convert,grab,convert... 
                    packet_dict = self._convert_packet_to_dict_(packet)
                    packets.append(packet_dict)
                    
-                   if len(packets) >= 1000:
+                   if len(packets) >= 500:
                         break
                    
+              self.logger.info(f"{len(packets)} packets captured.")
               return packets
          except Exception as e:
                self.logger.error(f"Failed to Capture Packets: {str(e)}")
