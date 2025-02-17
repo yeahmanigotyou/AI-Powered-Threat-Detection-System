@@ -1,11 +1,9 @@
 from dataclasses import dataclass
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 import threading
 import queue
 import time
-from concurrent.futures import ThreadPoolExecutor
-import json 
 from pathlib import Path
 
 from src.tools.tshark_wrapper import TsharkWrapper
