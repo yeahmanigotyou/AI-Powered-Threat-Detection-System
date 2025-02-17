@@ -42,7 +42,7 @@ class NetworkMonitor:
         self.last_scan_time = 0
         self.monitoring_threads = []
         self.data_dir = Path('network_data')
-        self.data_dir.mkdir(exits_ok = True)
+        self.data_dir.mkdir(exist_ok = True)
     
         
     def start_monitoring(self, duration: Optional[int] = None):
