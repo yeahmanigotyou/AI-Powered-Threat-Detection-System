@@ -7,10 +7,11 @@ import time
 from pathlib import Path
 
 from src.tools.tshark_wrapper import TsharkWrapper
-from src.tools.nmap_wrapper import NmapWrapper, ScanType
+from src.tools.nmap_wrapper import NmapWrapper
 from src.monitor.utils.privilege_manager import PrivilegeManager
 #from src.monitor.packet_analysis import PacketAnalyzer
-from src.monitor.utils.utils import setup_logger, save_json_data
+from src.monitor.utils.utils import setup_logger, save_json_data, ensure_directory
+from src.monitor.scan_type import ScanType
 
 @dataclass
 class MonitoringConfig:
@@ -41,8 +42,7 @@ class NetworkMonitor:
         self.scan_results_queue = queue.Queue()
         self.last_scan_time = 0
         self.monitoring_threads = []
-        self.data_dir = Path('network_data')
-        self.data_dir.mkdir(exist_ok = True)
+
     
         
     def start_monitoring(self, duration: Optional[int] = None):
@@ -119,7 +119,7 @@ class NetworkMonitor:
     def _packet_capture_worker(self):
         """Worker function for continuous packet capture"""
         try:
-            self.logger.info('Starting Packet Capture')
+            self.logger.info('Starting Packet Capture...')
             self.tshark.start_capture(
                 interface=self.interface,
                 packet_count=self.config.max_packet_count
@@ -251,42 +251,47 @@ class NetworkMonitor:
     def _save_monitoring_data(self):
         """Save accumulated monitoring data"""
         try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
             
             # Save packets
-            packets = []
-            while not self.packet_queue.empty():
-                try:
-                    packets.append(self.packet_queue.get_nowait())
-                except queue.Empty:
-                    break
-                    
+            packets = self._get_queue_contents(self.packet_queue)
             if packets:
-                packet_file = self.data_dir / f'packets_{timestamp}.json'
+                packet_file = Path ('data') / f'packets_{timestamp}.json'
+                ensure_directory()
                 save_json_data(packets, packet_file)
                 
             # Save scan results
-            scan_results = []
-            while not self.scan_results_queue.empty():
-                try:
-                    scan_results.append(self.scan_results_queue.get_nowait())
-                except queue.Empty:
-                    break
-                    
+            scan_results = self._get_queue_contents(self.scan_results_queue)
             if scan_results:
-                scan_file = self.data_dir / f'scan_{timestamp}.json'
+                scan_file = Path ('data') / f'scan_{timestamp}.json'
+                ensure_directory()
                 save_json_data(scan_results, scan_file)
                 
         except Exception as e:
-            self.logger.error(f"Error saving monitoring data: {str(e)}")
+            self.logger.error(f"Error saving monitoring data: {str(e)}", exc_info=True)
+            
+    def _get_queue_contents(self, q: queue.Queue) -> List:
+        """Safely get all contents from a queue"""
+        contents = []
+        while True:
+            try:
+                contents.append(q.get_nowait())
+            except queue.Empty:
+                break
+        return contents
             
     def get_monitoring_status(self) -> Dict:
         """Get current monitoring status"""
-        return {
-            'is_monitoring': self.is_monitoring,
-            'packet_queue_size': self.packet_queue.qsize(),
-            'scan_results_queue_size': self.scan_results_queue.qsize(),
-            'last_scan_time': datetime.fromtimestamp(self.last_scan_time).isoformat() if self.last_scan_time else None,
-            'active_threads': [thread.name for thread in self.monitoring_threads if thread.is_alive()],
-            'config': vars(self.config)
-        }
+        try:
+            status = {
+                'is_monitoring': self.is_monitoring,
+                'packet_queue_size': self.packet_queue.qsize(),
+                'scan_results_queue_size': self.scan_results_queue.qsize(),
+                'last_scan_time': datetime.fromtimestamp(self.last_scan_time) if self.last_scan_time else None,
+                'active_threads': [thread.name for thread in self.monitoring_threads if thread.is_alive()],
+                'config': vars(self.config)
+            }
+            return status
+        except Exception as e:
+            self.logger.error(f'Error getting monitoring status: {str(e)}')
+            return {'error': str(e)}

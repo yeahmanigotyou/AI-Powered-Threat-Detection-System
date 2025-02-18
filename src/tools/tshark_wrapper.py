@@ -1,4 +1,5 @@
 import pyshark
+import asyncio
 from typing import List, Dict, Optional, Any
 import threading
 import queue
@@ -27,15 +28,34 @@ class TsharkWrapper:
             target=self._capture_packets_async,
             args=(interface, packet_count)
         )
+        self.capture_thread.daemon = True
         self.capture_thread.start()
 
     def stop_capture(self) -> None:
         """Stop the packet capture gracefully"""
         self.stop_capture.set()
-        if self.capture_thread:
-            self.capture_thread.join()
+        if self.capture_thread and self.capture_thread.is_alive():
+            self.capture_thread.join(timeout = 5)
 
     def _capture_packets_async(self, interface: str, packet_count: Optional[int] = None) -> None:
+        """Set up event loop"""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            loop.run_until_complete(self._do_capture(interface, packet_count))
+        except Exception as e:    
+            self.logger.error(f'Capture failed: str{e}')
+        finally:
+            loop.close()
+            
+    async def to_async_iter(sync_generator):
+        for item in sync_generator:
+            yield item
+            await asyncio.sleep(0)
+            
+    async def _do_capture(self, interface: str, packet_count: Optional[int] = None) -> None: 
+        """Async coroutine for packet capture"""
         try:
             capture = pyshark.LiveCapture(
                 interface=interface,
@@ -49,12 +69,15 @@ class TsharkWrapper:
             )
             
             packets_processed = 0
-            for packet in capture.sniff_continuously():
+            async for packet in to_async_iter(capture.sniff_continuously()):
                 if self.stop_capture.is_set():
                     break
                     
                 packet_dict = self._convert_packet_to_dict_(packet)
-                self.packet_buffer.put(packet_dict)
+                try:
+                    self.packet_buffer.put_nowait(packet_dict)
+                except queue.Full:
+                    self.logger.warning("Packet buffer is Full, dropping packets")
                 
                 packets_processed += 1
                 if packet_count and packets_processed >= packet_count:

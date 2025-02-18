@@ -13,8 +13,8 @@ import threading
 from dataclasses import dataclass
 
 from src.monitor.network_monitor import NetworkMonitor, MonitoringConfig
-from src.monitor.utils.utils import ensure_directories
-from src.tools.nmap_wrapper import ScanType
+from src.monitor.utils.utils import ensure_directory, CustomEncoder
+from src.monitor.scan_type import ScanType
 
 @dataclass
 class ApplicationConfig:
@@ -167,12 +167,12 @@ class NetworkMonitorApp:
     def save_monitoring_status(self, status: dict):
         """Save monitoring status to file"""
         status_file = Path('data/status.json')
-        status_file.parent.mkdir(parents=True, exist_ok=True)
+        ensure_directory()
         
         status['timestamp'] = datetime.now().isoformat()
         
         with open(status_file, 'w') as f:
-            json.dump(status, f, indent=2)
+            json.dump(status, f, indent=2, cls = CustomEncoder)
             
     def status_monitoring_thread(self):
         """Thread to periodically save monitoring status"""
@@ -192,7 +192,7 @@ class NetworkMonitorApp:
             
             # Load configuration
             file_config = self.load_config(args.config)
-            ensure_directories()
+            ensure_directory()
             self.save_pid()
             self.setup_signal_handlers()
             

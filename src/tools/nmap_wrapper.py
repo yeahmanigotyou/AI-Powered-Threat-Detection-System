@@ -5,9 +5,9 @@ import json
 import ipaddress
 from pathlib import Path
 from datetime import datetime
-from enum import Enum
 from typing import Dict, List, Any, Optional, Union
 from src.monitor.utils.utils import setup_logger
+from src.monitor.scan_type import ScanType
 
 
 """
@@ -16,16 +16,6 @@ TO DO:
     _check_service_version
     _is_version_outdated
 """
-
-class ScanType(Enum):
-    QUICK = "quick"
-    COMPREHENSIVE = "comprehensive"
-    STEALTH = "stealth"
-    VULNERABILITY = "vulnerability"
-    SERVICE = "service"
-    OS = "os"
-    UDP = "udp"
-    AGGRESSIVE = "aggressive"
 
 class NmapWrapper:
     def __init__(self, sudo: bool = True, max_workers: int = 5):

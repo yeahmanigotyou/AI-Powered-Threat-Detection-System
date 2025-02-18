@@ -2,8 +2,11 @@ import logging
 import os
 from typing import Dict, Any
 from datetime import datetime
+from enum import Enum
 import json
+from pathlib import Path
 import numpy as np
+from src.monitor.scan_type import ScanType
 
 def setup_logger(name: str) -> logging.Logger:
     logger = logging.getLogger(name)
@@ -14,24 +17,22 @@ def setup_logger(name: str) -> logging.Logger:
     logger.addHandler(handler)
     return logger
 
-def ensure_directories():
+def ensure_directory():
     directories = ['logs','data','models']
     for directory in directories:
         os.makedirs(directory, exist_ok=True)
 
 def save_json_data(data: Dict[str, Any], filename: str):
-    timestamp = datetime.now().strftime('%Y.%m.%d_%H.%M.%S')
-    full_filename = f'data/{filename}_{timestamp}.json'
-    
-    with open(full_filename, 'w') as f:
-        json.dump(data, f, indent=4)
+    file_path = Path(filename)    
+    with open(file_path, 'w') as f:
+        json.dump(data, f, cls = CustomEncoder, indent=4)
         
 def load_json_data(filepath: str) -> Dict:
     with open(filepath, 'r') as f:
         return json.load(f)
     
 
-class NumpyEncoder(json.JSONEncoder):
+class CustomEncoder(json.JSONEncoder):
     
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -40,4 +41,12 @@ class NumpyEncoder(json.JSONEncoder):
             return float(obj)
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
-        return super(NumpyEncoder, self).default(obj)
+        elif isinstance(obj, Enum):
+            return obj.name
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, '__dict__'):
+            return vars(obj)
+        elif isinstance(obj, ScanType):
+            return obj.value
+        return super(CustomEncoder, self).default(obj)
