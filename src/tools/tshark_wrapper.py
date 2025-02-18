@@ -29,7 +29,7 @@ class TsharkWrapper:
             )
             self.logger.info(f"Started capture on interface {interface}")
 
-            for packet in self.capture.sniff_continuously(packet_count=10):
+            for packet in self.capture.sniff_continuously(packet_count=1):
                 if self.stop_flag:
                     break
 
@@ -72,6 +72,14 @@ class TsharkWrapper:
         except queue.Empty:
             pass
         return packets
+    
+    def clear_buffer(self) -> None:
+        """Clear the packet buffer"""
+        while not self.packet_buffer.empty():
+            try:
+                self.packet_buffer.get_nowait()
+            except queue.Empty:
+                break
 
     def _convert_packet_to_dict_(self, packet) -> Dict[str, Any]:
         try:
@@ -81,7 +89,7 @@ class TsharkWrapper:
                 'length': safe_int(packet.length),
                 'capture_length': safe_int(packet.captured_length),
                 'protocol': safe_str(packet.highest_layer),
-                'layers': list(packet.layers),
+                'layers': [str(layer) for layer in packet.layers], #list(packet.layers),  #Old version
                 'interface_captured': safe_str(packet.interface_captured),
                 'frame_info': {
                     'number': safe_int(packet.frame_info.number),

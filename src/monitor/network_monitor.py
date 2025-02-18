@@ -122,6 +122,7 @@ class NetworkMonitor:
         try:
             self.logger.info('Starting Packet Capture...')
             asyncio.set_event_loop(asyncio.new_event_loop())
+            self.tshark.clear_buffer()
             self.tshark.start_capture(
                 interface=self.interface,
                 packet_count=self.config.max_packet_count
