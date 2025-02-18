@@ -1,9 +1,7 @@
 import pyshark
-import asyncio
 from typing import List, Dict, Optional, Any
-import threading
 import queue
-from src.monitor.utils.utils import setup_logger
+from src.monitor.utils.utils import setup_logger, safe_float, safe_int, safe_str
 
 """
 TO DO:
@@ -13,79 +11,57 @@ TO DO:
 """
 
 class TsharkWrapper:
-    def __init__(self, buffer_size: int = 1000):
-        self.default_options = ['-T', 'json']
+    def __init__(self, buffer_size: int = 100000):
         self.logger = setup_logger("TsharkWrapper")
         self.packet_buffer = queue.Queue(maxsize=buffer_size)
-        self.stop_capture = threading.Event()
-        self.capture_thread = None
-        self.processing_thread = None
-
-    def start_capture(self, interface: str, packet_count: Optional[int] = None) -> None:
-        """Start packet capture in a separate thread"""
-        self.stop_capture.clear()
-        self.capture_thread = threading.Thread(
-            target=self._capture_packets_async,
-            args=(interface, packet_count)
-        )
-        self.capture_thread.daemon = True
-        self.capture_thread.start()
-
-    def stop_capture(self) -> None:
-        """Stop the packet capture gracefully"""
-        self.stop_capture.set()
-        if self.capture_thread and self.capture_thread.is_alive():
-            self.capture_thread.join(timeout = 5)
-
-    def _capture_packets_async(self, interface: str, packet_count: Optional[int] = None) -> None:
-        """Set up event loop"""
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        self.stop_flag = False
+        self.capture = None
         
+    def start_capture(self, interface: str, packet_count: Optional[int] = None) -> None:
+        """Start packet capture (runs synchronously, blocking execution)"""
+        self.stop_flag = False
+        packets_processed = 0
         try:
-            loop.run_until_complete(self._do_capture(interface, packet_count))
-        except Exception as e:    
-            self.logger.error(f'Capture failed: str{e}')
-        finally:
-            loop.close()
-            
-    async def to_async_iter(sync_generator):
-        for item in sync_generator:
-            yield item
-            await asyncio.sleep(0)
-            
-    async def _do_capture(self, interface: str, packet_count: Optional[int] = None) -> None: 
-        """Async coroutine for packet capture"""
-        try:
-            capture = pyshark.LiveCapture(
+            self.capture = pyshark.LiveCapture(
                 interface=interface,
                 include_raw=True,
-                use_json=True,
-                custom_parameters={
-                    '-n': '',  # Don't resolve names
-                    '-C': '100',  # Packet buffer size
-                    '-s': '0'  # Snapshot length (0 = unlimited)
-                }
+                use_json=True
             )
-            
-            packets_processed = 0
-            async for packet in to_async_iter(capture.sniff_continuously()):
-                if self.stop_capture.is_set():
+            self.logger.info(f"Started capture on interface {interface}")
+
+            for packet in self.capture.sniff_continuously(packet_count=10):
+                if self.stop_flag:
                     break
-                    
+
                 packet_dict = self._convert_packet_to_dict_(packet)
                 try:
                     self.packet_buffer.put_nowait(packet_dict)
                 except queue.Full:
-                    self.logger.warning("Packet buffer is Full, dropping packets")
-                
+                    self.logger.warning("Packet buffer is full, dropping packet")
+
                 packets_processed += 1
                 if packet_count and packets_processed >= packet_count:
                     break
-                    
+
         except Exception as e:
             self.logger.error(f"Capture failed: {str(e)}")
-            raise
+        finally:
+            self._stop_capture()
+            self.logger.info(f"Capture stopped after processing {packets_processed} packets")
+            
+    def stop_capture(self) -> None:
+        """Stop packet capture gracefully"""
+        self.logger.info("Stopping capture...")
+        self.stop_flag = True
+        self._stop_capture()
+
+    def _stop_capture(self):
+        """Internal method to clean up capture"""
+        if self.capture:
+            try:
+                self.capture.close()
+            except Exception as e:
+                self.logger.error(f'Error closing capture: {str(e)}')
 
     def get_packets(self, batch_size: int = 100) -> List[Dict]:
         """Retrieve packets from the buffer"""
@@ -99,75 +75,76 @@ class TsharkWrapper:
 
     def _convert_packet_to_dict_(self, packet) -> Dict[str, Any]:
         try:
-            # Base packet information
+            # Base packet information with safe conversions
             packet_dict = {
-                'timestamp': float(packet.sniff_timestamp),
-                'length': int(packet.length),
-                'capture_length': int(packet.captured_length),
-                'protocol': packet.highest_layer,
+                'timestamp': safe_float(packet.sniff_timestamp),
+                'length': safe_int(packet.length),
+                'capture_length': safe_int(packet.captured_length),
+                'protocol': safe_str(packet.highest_layer),
                 'layers': list(packet.layers),
-                'interface_captured': packet.interface_captured,
+                'interface_captured': safe_str(packet.interface_captured),
                 'frame_info': {
-                    'number': int(packet.frame_info.number),
-                    'time_epoch': float(packet.frame_info.time_epoch),
-                    'time_delta': float(packet.frame_info.time_delta),
-                    'protocols': packet.frame_info.protocols.split(':')
+                    'number': safe_int(packet.frame_info.number),
+                    'time_epoch': safe_float(packet.frame_info.time_epoch),
+                    'time_delta': safe_float(packet.frame_info.time_delta),
+                    'protocols': packet.frame_info.protocols.split(':') if packet.frame_info.protocols else []
                 }
             }
 
-            # IP Layer
+            # IP Layer with safe conversion
             if hasattr(packet, 'ip'):
                 packet_dict['ip'] = {
-                    'version': int(packet.ip.version),
-                    'src': packet.ip.src,
-                    'dst': packet.ip.dst,
-                    'ttl': int(packet.ip.ttl),
+                    'version': safe_int(packet.ip.version, 4),
+                    'src': safe_str(packet.ip.src),
+                    'dst': safe_str(packet.ip.dst),
+                    'ttl': safe_int(packet.ip.ttl, 64),
                     'ds': packet.ip.ds if hasattr(packet.ip, 'ds') else None,
-                    'len': int(packet.ip.len),
-                    'id': packet.ip.id,
+                    'len': safe_int(packet.ip.len),
+                    'id': safe_int(packet.ip.id),
                     'flags': packet.ip.flags if hasattr(packet.ip, 'flags') else None,
                     'fragment': bool(int(packet.ip.flags_mf)) if hasattr(packet.ip, 'flags_mf') else None,
-                    'fragment_offset': int(packet.ip.frag_offset) if hasattr(packet.ip, 'frag_offset') else None
+                    'fragment_offset': safe_int(packet.ip.frag_offset)
                 }
 
             # TCP Layer
             if hasattr(packet, 'tcp'):
                 packet_dict['tcp'] = {
-                    'srcport': int(packet.tcp.srcport),
-                    'dstport': int(packet.tcp.dstport),
-                    'seq': int(packet.tcp.seq),
-                    'ack': int(packet.tcp.ack) if hasattr(packet.tcp, 'ack') else None,
-                    'len': int(packet.tcp.len),
-                    'window_size': int(packet.tcp.window_size),
+                    'srcport': safe_int(packet.tcp.srcport),
+                    'dstport': safe_int(packet.tcp.dstport),
+                    'seq': safe_int(packet.tcp.seq),
+                    'ack': safe_int(packet.tcp.ack) if hasattr(packet.tcp, 'ack') else None,
+                    'len': safe_int(packet.tcp.len),
+                    'window_size': safe_int(packet.tcp.window_size),
                     'flags': {
-                        'SYN': bool(int(packet.tcp.flags_syn)),
-                        'ACK': bool(int(packet.tcp.flags_ack)),
-                        'FIN': bool(int(packet.tcp.flags_fin)),
-                        'RST': bool(int(packet.tcp.flags_reset)),
-                        'PSH': bool(int(packet.tcp.flags_push)),
-                        'URG': bool(int(packet.tcp.flags_urg)),
-                        'ECE': bool(int(packet.tcp.flags_ecn)) if hasattr(packet.tcp, 'flags_ecn') else None,
-                        'CWR': bool(int(packet.tcp.flags_cwr)) if hasattr(packet.tcp, 'flags_cwr') else None
+                        'SYN': bool(int(getattr(packet.tcp, 'flags_syn', 0))),
+                        'ACK': bool(int(getattr(packet.tcp, 'flags_ack', 0))),
+                        'FIN': bool(int(getattr(packet.tcp, 'flags_fin', 0))),
+                        'RST': bool(int(getattr(packet.tcp, 'flags_reset', 0))),
+                        'PSH': bool(int(getattr(packet.tcp, 'flags_push', 0))),
+                        'URG': bool(int(getattr(packet.tcp, 'flags_urg', 0))),
+                        'ECE': bool(int(getattr(packet.tcp, 'flags_ecn', 0))) if hasattr(packet.tcp, 'flags_ecn') else None,
+                        'CWR': bool(int(getattr(packet.tcp, 'flags_cwr', 0))) if hasattr(packet.tcp, 'flags_cwr') else None
                     },
                     'options': self._parse_tcp_options(packet.tcp) if hasattr(packet.tcp, 'options') else None
                 }
 
+
             # UDP Layer
             elif hasattr(packet, 'udp'):
                 packet_dict['udp'] = {
-                    'srcport': int(packet.udp.srcport),
-                    'dstport': int(packet.udp.dstport),
-                    'length': int(packet.udp.length),
+                    'srcport': safe_int(packet.udp.srcport),
+                    'dstport': safe_int(packet.udp.dstport),
+                    'length': safe_int(packet.udp.length),
                     'checksum': packet.udp.checksum if hasattr(packet.udp, 'checksum') else None
                 }
 
             # ICMP Layer
             elif hasattr(packet, 'icmp'):
                 packet_dict['icmp'] = {
-                    'type': int(packet.icmp.type),
-                    'code': int(packet.icmp.code),
+                    'type': safe_int(packet.icmp.type),
+                    'code': safe_int(packet.icmp.code),
                     'checksum': packet.icmp.checksum,
-                    'sequence_number': int(packet.icmp.seq) if hasattr(packet.icmp, 'seq') else None
+                    'sequence_number': safe_int(packet.icmp.seq) if hasattr(packet.icmp, 'seq') else None
                 }
 
             # DNS Layer
@@ -188,11 +165,12 @@ class TsharkWrapper:
             self.logger.error(f"Error converting packet: {str(e)}")
             # Return minimal packet information on error
             return {
-                'timestamp': float(packet.sniff_timestamp),
-                'length': int(packet.length),
+                'timestamp': safe_float(packet.sniff_timestamp),
+                'length': safe_int(packet.length),
                 'protocol': 'unknown',
                 'error': str(e)
             }
+
 
     def _parse_tcp_options(self, tcp) -> Dict:
         """Parse TCP options"""

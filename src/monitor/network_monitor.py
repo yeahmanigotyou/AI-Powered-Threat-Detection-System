@@ -5,6 +5,7 @@ import threading
 import queue
 import time
 from pathlib import Path
+import asyncio
 
 from src.tools.tshark_wrapper import TsharkWrapper
 from src.tools.nmap_wrapper import NmapWrapper
@@ -15,7 +16,7 @@ from src.monitor.scan_type import ScanType
 
 @dataclass
 class MonitoringConfig:
-    packet_buffer_size: int = 1000
+    packet_buffer_size: int = 100000
     scan_interval: int = 300
     max_packet_count: Optional[int] = None
     ports_to_monitor: str = '1-1024'
@@ -90,9 +91,9 @@ class NetworkMonitor:
         """Start packet capture thread"""
         capture_thread = threading.Thread(
             target=self._packet_capture_worker,
-            name="PacketCapture"
+            name="PacketCapture",
+            daemon=True
         )
-        capture_thread.daemon = True
         capture_thread.start()
         self.monitoring_threads.append(capture_thread)
         
@@ -100,9 +101,9 @@ class NetworkMonitor:
         """Start network scanning thread"""
         scan_thread = threading.Thread(
             target=self._network_scan_worker,
-            name="NetworkScan"
+            name="NetworkScan",
+            daemon=True
         )
-        scan_thread.daemon = True
         scan_thread.start()
         self.monitoring_threads.append(scan_thread)
         
@@ -110,9 +111,9 @@ class NetworkMonitor:
         """Start data processing thread"""
         process_thread = threading.Thread(
             target=self._data_processing_worker,
-            name="DataProcessing"
+            name="DataProcessing",
+            daemon=True
         )
-        process_thread.daemon = True
         process_thread.start()
         self.monitoring_threads.append(process_thread)
         
@@ -120,6 +121,7 @@ class NetworkMonitor:
         """Worker function for continuous packet capture"""
         try:
             self.logger.info('Starting Packet Capture...')
+            asyncio.set_event_loop(asyncio.new_event_loop())
             self.tshark.start_capture(
                 interface=self.interface,
                 packet_count=self.config.max_packet_count

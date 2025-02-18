@@ -30,7 +30,25 @@ def save_json_data(data: Dict[str, Any], filename: str):
 def load_json_data(filepath: str) -> Dict:
     with open(filepath, 'r') as f:
         return json.load(f)
-    
+
+def safe_int(value, default=0):
+    """Safely convert a value to int, return default if None or conversion fails."""
+    try:
+        return int(value) if value is not None else default
+    except (ValueError, TypeError):
+        return default
+
+def safe_float(value, default=0.0):
+    """Safely convert a value to float, return default if None or conversion fails."""
+    try:
+        return float(value) if value is not None else default
+    except (ValueError, TypeError):
+        return default
+
+def safe_str(value, default='unknown'):
+    """Safely convert a value to string, return default if None."""
+    return str(value) if value is not None else default
+
 
 class CustomEncoder(json.JSONEncoder):
     
@@ -45,7 +63,7 @@ class CustomEncoder(json.JSONEncoder):
             return obj.name
         elif isinstance(obj, datetime):
             return obj.isoformat()
-        elif isinstance(obj, '__dict__'):
+        elif isinstance(obj, dict):
             return vars(obj)
         elif isinstance(obj, ScanType):
             return obj.value
