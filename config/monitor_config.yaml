@@ -6,7 +6,6 @@ ports_to_monitor: "1-1024,3306,3389,5432"
 scan_types:
   - QUICK
   - SERVICE
-  - VULNERABILITY
 
 # Logging Configuration
 log_level: INFO

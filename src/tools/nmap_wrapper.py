@@ -15,6 +15,7 @@ TO DO:
 -Add the ability to check if service version is outdated:
     _check_service_version
     _is_version_outdated
+-Add target validation
 """
 
 class NmapWrapper:
