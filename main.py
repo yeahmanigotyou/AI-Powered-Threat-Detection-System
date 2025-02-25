@@ -1,43 +1,46 @@
-from src.monitor.network_monitor import NetworkMonitor
-from src.monitor.utils.utils import ensure_directories
-import logging
-import argparse
+# main.py
+from src.network_monitor_app import NetworkMonitorApp
+from src.UI.monitoring_ui import NetworkMonitorUI
+import ctypes
 import sys
+import win32event
+import win32api
+import logging
 
-def setup_logging ():
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('logs/system.log'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-    
-def parse_arguments():
-    parser = argparse.ArgumentParser(description='Network Monitoring Tools')
-    parser.add_argument('--interface', '-i', default='Ethernet', help='Network interface to monitor')
-    parser.add_argument('--target', '-t', default='192.168.1.0/24', help='Target network to scan')
-    return parser.parse_args()
- 
-def main():       
-    setup_logging()
-    logger = logging.getLogger('main')
-    
-    ensure_directories()
-    args = parse_arguments()
-    
-    monitor = NetworkMonitor(interface=args.interface, target=args.target)
-        
-    try:    
-        monitor.start_monitoring()
-        logger.info('Network Monitoring has concluded. You may close this window.')
-    except KeyboardInterrupt as e:
-        logger.info('Monitoring stopped by user.')
-        sys.exit(0)
+def ensure_single_instance():
+    """Check if another instance is running using a mutex."""
+    mutex_name = 'Global\\NetworkMonitorApp'
+    try:
+        mutex = win32event.CreateMutex(None, True, mutex_name)
+        if win32api.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            logging.basicConfig(level=logging.INFO)
+            logging.error("Another instance of the application is already running.")
+            sys.exit(1)
+        return mutex
     except Exception as e:
-        logger.error(f'Monitoring failed (ERROR): {e}')
+        logging.basicConfig(level=logging.INFO)
+        logging.error(f"Failed to create mutex: {e}")
         sys.exit(1)
-    
+
+def main():
+    # Ensure single instance before doing anything
+    mutex = ensure_single_instance()
+
+    # Check if we need elevation
+    if sys.platform == 'win32' and not ctypes.windll.shell32.IsUserAnAdmin():
+        logging.basicConfig(level=logging.INFO)
+        logging.info("Not running as admin; elevating privileges...")
+        # Elevate with SW_HIDE (0) to avoid CMD window
+        ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 0)
+        sys.exit(0)
+
+    # If we reach here, we're either admin or don't need elevation
+    app = NetworkMonitorApp()
+    ui = NetworkMonitorUI(app)
+    ui.run()
+
+    # Cleanup mutex on exit
+    win32api.CloseHandle(mutex)
+
 if __name__ == "__main__":
     main()
