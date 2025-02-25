@@ -42,7 +42,7 @@ class NmapWrapper:
                 'description': 'Vulnerability detection scan'
             },
             ScanType.SERVICE: {
-                'arguments': '-sV --version-intensity 5',
+                'arguments': '-sV --version-intensity 3 --host-timeout 30s',
                 'description': 'Detailed service version detection'
             },
             ScanType.OS: {

@@ -1,5 +1,6 @@
 import tkinter as tk
 import threading
+import ctypes
 
 class NetworkMonitorUI:
     def __init__(self, app):
@@ -20,22 +21,29 @@ class NetworkMonitorUI:
         
         self.stop_event = threading.Event()
         self.monitor_thread = None
+        
+        self.app.set_ui_callback(self.update_status)
 
     def update_status(self, status):
         """Update the status label in the UI."""
-        self.status_label.config(text=f"Status: {status}")
-        if status == "Running":
-            self.status_label.config(fg="green")
-        else:
-            self.status_label.config(fg="red")
-
+        def _update():
+            self.status_label.config(text=f"Status: {status}")
+            if status == "Running":
+                self.status_label.config(fg="green")
+                self.start_button.config(state = tk.DISABLED)
+                self.stop_button.config(state = tk.NORMAL)
+            else:
+                self.status_label.config(fg="red")
+                self.start_button.config(state = tk.NORMAL)
+                self.stop_button.config(state = tk.DISABLED)
+                if self.monitor_thread:
+                    self.monitor_thread.join()
+                    self.monitor_thread = None
+        self.window.after(11, _update)
+            
     def start_monitoring(self):
-        """Start monitoring in a separate thread to avoid blocking the UI."""
-        self.start_button.config(state=tk.DISABLED)
-        self.stop_button.config(state=tk.NORMAL)
+        """Start monitoring in a separate thread."""
         self.update_status("Running")
-        
-        # Start monitoring in a new thread
         self.monitor_thread = threading.Thread(target=self.app.start_monitoring)
         self.monitor_thread.start()
 
@@ -43,12 +51,6 @@ class NetworkMonitorUI:
         """Stop monitoring and update UI."""
         self.app.stop_monitoring()
         self.update_status("Stopped")
-        
-        if self.monitor_thread:
-            self.monitor_thread.join()
-        
-        self.start_button.config(state=tk.NORMAL)
-        self.stop_button.config(state=tk.DISABLED)
 
     def run(self):
         """Start the Tkinter event loop."""

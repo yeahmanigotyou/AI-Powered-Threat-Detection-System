@@ -1,6 +1,10 @@
 import argparse
 import logging
-import signal
+import atexit
+import win32api
+import win32event
+import pywintypes
+import ctypes
 import sys
 import os
 import time
@@ -31,6 +35,19 @@ class NetworkMonitorApp:
         self.logger = self.monitor = None
         self.monitor = None
         self.stop_event = threading.Event()
+        self.mutex = None
+        
+        self.setup_logging()
+        self.args = self.parse_arguments()
+        self.file_config = self.load_config(self.args.config)
+        self.monitor_config = self.create_monitoring_config(self.args, self.file_config)
+        self.ui_callback = None
+        self.monitor_thread = None
+        
+        atexit.register(self.cleanup_pid)
+        
+    def set_ui_callback(self, callback):
+        self.ui_callback = callback
         
     def setup_logging(self):
         """Configure logging with rotation and multiple handlers"""
@@ -116,38 +133,31 @@ class NetworkMonitorApp:
             return {}
         
     def save_pid(self):
+        """Handle PID file (mutex moved to main.py)"""
         if sys.platform == 'win32':
-            try:
-                import win32event
-                import win32api
-                self.mutex = win32event.CreateMutex(None, 1, 'Global\\NetworkMonitorApp')
-                if win32api.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
-                    self.logger.error("Application already running")
-                    sys.exit(1)
-            except ImportError:
-                self.logger.error("pywin32 package not installed. Please install with: pip install pywin32")
-                sys.exit(1)
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+            self.logger.info(f"Running as admin: {is_admin}")
         else:
             pid_path = Path(self.config.pid_file)
             pid_path.parent.mkdir(parents=True, exist_ok=True)
             pid_path.write_text(str(os.getpid()))
-        
+
     def cleanup_pid(self):
-        """Remove PID file"""
+        """Remove PID file (no mutex handling here)"""
         try:
             Path(self.config.pid_file).unlink(missing_ok=True)
         except Exception as e:
-            self.logger.error(f"Error cleaning up PID file: {e}")
+            self.logger.error(f"Error during cleanup: {e}")
             
-    def setup_signal_handlers(self):
-        """Setup signal handlers for graceful shutdown"""
-        def signal_handler(signum, frame):
-            signal_name = signal.Signals(signum).name
-            self.logger.info(f"Received signal {signal_name}")
-            self.stop_event.set()
+    # def setup_signal_handlers(self):
+    #     """Setup signal handlers for graceful shutdown"""
+    #     def signal_handler(signum, frame):
+    #         signal_name = signal.Signals(signum).name
+    #         self.logger.info(f"Received signal {signal_name}")
+    #         self.stop_event.set()
         
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+    #     signal.signal(signal.SIGINT, signal_handler)
+    #     signal.signal(signal.SIGTERM, signal_handler)
             
 
     def create_monitoring_config(self, args: argparse.Namespace, 
@@ -180,48 +190,78 @@ class NetworkMonitorApp:
             if self.monitor:
                 status = self.monitor.get_monitoring_status()
                 self.save_monitoring_status(status)
-            time.sleep(60)  # Update status every minute
+            time.sleep(10)  # Update status every minute
             
     def start_monitoring(self):
         """Starts the network monitoring"""
-        # Initial setup
-        args = self.parse_arguments()
-        self.setup_logging()
-        self.logger.info("Starting Network Monitoring Application")
+        if not self.monitor:
+            self.logger.info("Starting Network Monitoring...")
+            ensure_directory()
+            self.monitor = NetworkMonitor(
+                interface=self.args.interface,
+                target=self.args.target,
+                config=self.monitor_config 
+            )
+            status_thread = threading.Thread(target=self.status_monitoring_thread, daemon=True)
+            status_thread.start()
+            # Run monitor in a separate thread
+            self.monitor_thread = threading.Thread(target=self.monitor.start_monitoring, daemon=True)
+            self.monitor_thread.start()
+            # Poll for stop state in a separate thread
+            threading.Thread(target=self._monitor_state, daemon=True).start()
+            
+    def _monitor_state(self):
+        """Poll monitor state and update UI when stopped"""
+        while not self.stop_event.is_set():
+            if self.monitor and not self.monitor.is_monitoring:
+                if self.ui_callback:
+                    self.ui_callback("Stopped")
+                self.logger.info("Network Monitoring has concluded (internal stop)")
+                break 
+            time.sleep(0.1)
+        # # Initial setup
+        # args = self.parse_arguments()
+        # self.setup_logging()
+        # self.logger.info("Starting Network Monitoring Application")
         
-        # Load configuration
-        file_config = self.load_config(args.config)
-        ensure_directory()
-        self.save_pid()
-        self.setup_signal_handlers()
+        # # Load configuration
+        # file_config = self.load_config(args.config)
+        # ensure_directory()
+        # self.save_pid()
+        # #self.setup_signal_handlers()
         
-        # Create monitoring configuration
-        monitor_config = self.create_monitoring_config(args, file_config)
+        # # Create monitoring configuration
+        # monitor_config = self.create_monitoring_config(args, file_config)
         
-        # Initialize and start monitor
-        self.monitor = NetworkMonitor(
-            interface=args.interface,
-            target=args.target,
-            config=monitor_config
-        )
+        # # Initialize and start monitor
+        # self.monitor = NetworkMonitor(
+        #     interface=args.interface,
+        #     target=args.target,
+        #     config=monitor_config
+        # )
         
-        # Start status monitoring thread
-        status_thread = threading.Thread(
-            target=self.status_monitoring_thread,
-            daemon=True
-        )
-        status_thread.start()
+        # # Start status monitoring thread
+        # status_thread = threading.Thread(
+        #     target=self.status_monitoring_thread,
+        #     daemon=True
+        # )
+        # status_thread.start()
         
-        # Start monitoring
-        self.logger.info("Starting network monitoring...")
-        self.monitor.start_monitoring(duration=args.duration)
+        # # Start monitoring
+        # self.logger.info("Starting network monitoring...")
+        # self.monitor.start_monitoring(duration=args.duration)
 
             
     
     def stop_monitoring(self):
         """Stops the network monitoring"""
-        self.stop_event.set()
-        if self.monitor:
-            self.monitor.stop_monitoring()
-        self.cleanup_pid()
-        self.logger.info("Network Monitoring has concluded")
+        if not self.stop_event.is_set():
+            self.stop_event.set()
+            if self.monitor:
+                self.monitor.stop_monitoring()
+            self.cleanup_pid()
+            self.logger.info("Network Monitoring has concluded")
+            if self.ui_callback:
+                self.ui_callback("Stopped")
+            if self.monitor_thread and self.monitor_thread.is_alive():
+                self.monitor_thread.join()

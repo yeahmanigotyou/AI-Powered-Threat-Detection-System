@@ -60,9 +60,13 @@ class TsharkWrapper:
         """Internal method to clean up capture"""
         if self.capture:
             try:
+                # Ensure pyshark's event loop stops
+                if hasattr(self.capture, 'eventloop') and self.capture.eventloop.is_running():
+                    self.capture.eventloop.stop()
                 self.capture.close()
+                self.capture = None
             except Exception as e:
-                self.logger.error(f'Error closing capture: {str(e)}')
+                self.logger.error(f'Error closing capture: {str(e)}', exc_info=True)
 
     def get_packets(self, batch_size: int = 100) -> List[Dict]:
         """Retrieve packets from the buffer"""

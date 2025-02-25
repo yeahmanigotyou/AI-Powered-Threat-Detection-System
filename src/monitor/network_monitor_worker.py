@@ -43,6 +43,8 @@ class NetworkMonitor:
         self.scan_results_queue = queue.Queue()
         self.last_scan_time = 0
         self.monitoring_threads = []
+        self.stopping = False
+        self.loop = None
 
     
         
@@ -53,6 +55,8 @@ class NetworkMonitor:
             self._check_privileges()
             
             self.is_monitoring = True
+            self.stopping = False
+            self.last_scan_time = 0
             
             self._start_packet_capture()
             self._start_network_scanning()
@@ -63,23 +67,36 @@ class NetworkMonitor:
                 self.stop_monitoring()
             
         except Exception as e:
-            self.logger.error(f'Error during monitoring startup: {str(e)}')
+            self.logger.error(f'Error during monitoring startup: {str(e)}', exc_info=True)
             self.stop_monitoring()
             raise
 
-    def stop_monitoring(self):
-        """Stop all monitoring activities"""
-        self.logger.info("Stopping network monitoring...")
-        self.is_monitoring = False
-        
-        # Stop all threads
-        for thread in self.monitoring_threads:
-            thread.join()
+    def stop_monitoring(self, internal_call = False):
+        """Stop all monitoring activities once"""
+        if not self.stopping:
+            self.logger.info("Stopping network monitoring...")
+            self.stopping = True
+            self.is_monitoring = False
             
-        self.monitoring_threads.clear()
-        
-        # Final data save
-        self._save_monitoring_data()
+            self.tshark.stop_capture()  # Explicitly stop tshark
+            
+            if not internal_call:
+                current_thread = threading.current_thread()
+                for thread in self.monitoring_threads:
+                    if thread is not current_thread and thread.is_alive():
+                        thread.join(timeout=15.0)  # Increased timeout for nmap
+                        if thread.is_alive():
+                            self.logger.warning(f"Thread {thread.name} did not terminate in time")
+                self.monitoring_threads.clear()
+                
+            self.monitoring_threads.clear()
+            
+            self._save_monitoring_data()
+            
+            if self.loop and not self.loop.is_closed():
+                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                self.loop.close()
+                self.loop = None
         
     def _check_privileges(self):
         """Check and elevate privileges if needed"""
@@ -96,6 +113,7 @@ class NetworkMonitor:
         )
         capture_thread.start()
         self.monitoring_threads.append(capture_thread)
+        self.logger.info(f"Packet capture thread started: {capture_thread.is_alive()}")
         
     def _start_network_scanning(self):
         """Start network scanning thread"""
@@ -106,6 +124,7 @@ class NetworkMonitor:
         )
         scan_thread.start()
         self.monitoring_threads.append(scan_thread)
+        self.logger.info(f"Network scan thread started: {scan_thread.is_alive()}")
         
     def _start_data_processing(self):
         """Start data processing thread"""
@@ -116,55 +135,67 @@ class NetworkMonitor:
         )
         process_thread.start()
         self.monitoring_threads.append(process_thread)
+        self.logger.info(f"Data processing thread started: {process_thread.is_alive()}")
         
     def _packet_capture_worker(self):
         """Worker function for continuous packet capture"""
         try:
             self.logger.info('Starting Packet Capture...')
-            asyncio.set_event_loop(asyncio.new_event_loop())
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
             self.tshark.clear_buffer()
             self.tshark.start_capture(
                 interface=self.interface,
-                packet_count=self.config.max_packet_count
+                packet_count=self.config.max_packet_count  # None by default
             )
-            
             while self.is_monitoring:
                 packets = self.tshark.get_packets(batch_size=100)
                 if packets:
                     self._process_packets(packets)
                 time.sleep(0.1)  # Prevent CPU overuse
-                    
         except Exception as e:
-            self.logger.error(f'Error in packet capture: {str(e)}')
-            self.stop_monitoring()
-            
+            self.logger.error(f'Error in packet capture: {str(e)}', exc_info=True)
+            # Don’t call stop_monitoring() to avoid recursion
+        finally:
+            if self.loop and not self.loop.is_closed():
+                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+                self.loop.close()
+                self.loop = None
+
     def _network_scan_worker(self):
         """Worker function for periodic network scanning"""
         try:
+            self.logger.info("Network scan worker thread running")
             while self.is_monitoring:
                 current_time = time.time()
-                if current_time - self.last_scan_time >= self.config.scan_interval:
+                time_diff = current_time - self.last_scan_time
+                self.logger.debug(f"Time since last scan: {time_diff:.2f}s, interval: {self.config.scan_interval}s")
+                if time_diff >= self.config.scan_interval:
                     self.logger.info(f"Starting network scan on target: {self.target}")
-                    
                     for scan_type in self.config.scan_types:
+                        if not self.is_monitoring:
+                            self.logger.info(f"Aborting {scan_type.value} scan due to stop request")
+                            break
+                        self.logger.info(f"Running {scan_type.value} scan...")
                         scan_results = self.nmap.scan_network(
                             target=self.target,
                             scan_type=scan_type,
                             ports=self.config.ports_to_monitor
                         )
-                        self.scan_results_queue.put({
-                            'timestamp': datetime.now().isoformat(),
-                            'scan_type': scan_type.value,
-                            'results': scan_results
-                        })
-                        
-                    self.last_scan_time = current_time
-                    
-                time.sleep(1)  # Check every second
-                
+                        if self.is_monitoring:  # Only queue if still monitoring
+                            self.scan_results_queue.put({
+                                'timestamp': datetime.now().isoformat(),
+                                'scan_type': scan_type.value,
+                                'results': scan_results
+                            })
+                    if self.is_monitoring:
+                        self.last_scan_time = current_time
+                        self.logger.info("Scan cycle completed, stopping monitoring...")
+                        self.stop_monitoring(internal_call = True)
+                        break
+                time.sleep(1)
         except Exception as e:
-            self.logger.error(f'Error in network scanning: {str(e)}')
-            self.stop_monitoring()
+            self.logger.error(f'Error in network scanning: {str(e)}', exc_info=True)
             
     def _data_processing_worker(self):
         """Worker function for processing and saving monitoring data"""
@@ -183,7 +214,6 @@ class NetworkMonitor:
                 
         except Exception as e:
             self.logger.error(f'Error in data processing: {str(e)}')
-            self.stop_monitoring()
             
     def _process_packets(self, packets: List[Dict]):
         """Process captured packets"""
