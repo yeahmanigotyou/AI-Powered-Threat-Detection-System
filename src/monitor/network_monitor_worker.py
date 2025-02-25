@@ -45,8 +45,10 @@ class NetworkMonitor:
         self.monitoring_threads = []
         self.stopping = False
         self.loop = None
+        self.status_callback = None
 
-    
+    def set_status_callback(self, callback):
+        self.status_callback = callback
         
     def start_monitoring(self, duration: Optional[int] = None):
         """Start network monitoring with optional duration"""
@@ -57,6 +59,8 @@ class NetworkMonitor:
             self.is_monitoring = True
             self.stopping = False
             self.last_scan_time = 0
+            if self.status_callback:
+                self.status_callback("Running")
             
             self._start_packet_capture()
             self._start_network_scanning()
@@ -88,8 +92,6 @@ class NetworkMonitor:
                         if thread.is_alive():
                             self.logger.warning(f"Thread {thread.name} did not terminate in time")
                 self.monitoring_threads.clear()
-                
-            self.monitoring_threads.clear()
             
             self._save_monitoring_data()
             
@@ -97,6 +99,9 @@ class NetworkMonitor:
                 self.loop.run_until_complete(self.loop.shutdown_asyncgens())
                 self.loop.close()
                 self.loop = None
+            
+            if self.status_callback:
+                self.status_callback("Stopped")
         
     def _check_privileges(self):
         """Check and elevate privileges if needed"""

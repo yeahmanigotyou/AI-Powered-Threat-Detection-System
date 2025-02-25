@@ -1,9 +1,6 @@
 import argparse
 import logging
 import atexit
-import win32api
-import win32event
-import pywintypes
 import ctypes
 import sys
 import os
@@ -43,10 +40,12 @@ class NetworkMonitorApp:
         self.monitor_config = self.create_monitoring_config(self.args, self.file_config)
         self.ui_callback = None
         self.monitor_thread = None
+        self.stop_event = threading.Event()
         
         atexit.register(self.cleanup_pid)
         
     def set_ui_callback(self, callback):
+        self.logger.info("Setting UI callback")
         self.ui_callback = callback
         
     def setup_logging(self):
@@ -147,18 +146,7 @@ class NetworkMonitorApp:
         try:
             Path(self.config.pid_file).unlink(missing_ok=True)
         except Exception as e:
-            self.logger.error(f"Error during cleanup: {e}")
-            
-    # def setup_signal_handlers(self):
-    #     """Setup signal handlers for graceful shutdown"""
-    #     def signal_handler(signum, frame):
-    #         signal_name = signal.Signals(signum).name
-    #         self.logger.info(f"Received signal {signal_name}")
-    #         self.stop_event.set()
-        
-    #     signal.signal(signal.SIGINT, signal_handler)
-    #     signal.signal(signal.SIGTERM, signal_handler)
-            
+            self.logger.error(f"Error during cleanup: {e}")        
 
     def create_monitoring_config(self, args: argparse.Namespace, 
                                file_config: dict) -> MonitoringConfig:
@@ -194,21 +182,41 @@ class NetworkMonitorApp:
             
     def start_monitoring(self):
         """Starts the network monitoring"""
+        self.logger.info("Start monitoring called")
         if not self.monitor:
-            self.logger.info("Starting Network Monitoring...")
+            self.logger.info("Initializing NetworkMonitor")
             ensure_directory()
             self.monitor = NetworkMonitor(
                 interface=self.args.interface,
                 target=self.args.target,
                 config=self.monitor_config 
             )
+            # Pass UI callback to monitor
+            if self.ui_callback:
+                self.logger.info("Setting status callback (start_monitoring)")
+                self.monitor.set_status_callback(self.ui_callback)
             status_thread = threading.Thread(target=self.status_monitoring_thread, daemon=True)
             status_thread.start()
-            # Run monitor in a separate thread
-            self.monitor_thread = threading.Thread(target=self.monitor.start_monitoring, daemon=True)
+            self.monitor_thread = threading.Thread(target=self._run_monitoring, daemon=True)
+            self.logger.info("Starting monitor thread (start_monitoring)")
             self.monitor_thread.start()
-            # Poll for stop state in a separate thread
-            threading.Thread(target=self._monitor_state, daemon=True).start()
+        else:
+            self.logger.info("Monitoring already in progress (start_monitoring)")
+            
+    def _run_monitoring(self):
+        """Run monitoring and log conclusion when stopped"""
+        try:
+            self.logger.info("Running NetworkMonitor.start_monitoring")
+            self.monitor.start_monitoring()
+            self.logger.info("Monitoring started, waiting for completion")
+            while self.monitor.is_monitoring and not self.stop_event.is_set():
+                time.sleep(0.1)
+            self.logger.info("Monitoring stopped, finalizing")
+            self.stop_monitoring(internal_call = True)  # Ensure cleanup
+            self.logger.info("Network Monitoring has concluded")  # Log here
+        except Exception as e:
+            self.logger.error(f"Error in _run_monitoring: {str(e)}", exc_info=True)
+            self.stop_monitoring(internal_call = True)
             
     def _monitor_state(self):
         """Poll monitor state and update UI when stopped"""
@@ -219,49 +227,20 @@ class NetworkMonitorApp:
                 self.logger.info("Network Monitoring has concluded (internal stop)")
                 break 
             time.sleep(0.1)
-        # # Initial setup
-        # args = self.parse_arguments()
-        # self.setup_logging()
-        # self.logger.info("Starting Network Monitoring Application")
-        
-        # # Load configuration
-        # file_config = self.load_config(args.config)
-        # ensure_directory()
-        # self.save_pid()
-        # #self.setup_signal_handlers()
-        
-        # # Create monitoring configuration
-        # monitor_config = self.create_monitoring_config(args, file_config)
-        
-        # # Initialize and start monitor
-        # self.monitor = NetworkMonitor(
-        #     interface=args.interface,
-        #     target=args.target,
-        #     config=monitor_config
-        # )
-        
-        # # Start status monitoring thread
-        # status_thread = threading.Thread(
-        #     target=self.status_monitoring_thread,
-        #     daemon=True
-        # )
-        # status_thread.start()
-        
-        # # Start monitoring
-        # self.logger.info("Starting network monitoring...")
-        # self.monitor.start_monitoring(duration=args.duration)
-
-            
     
-    def stop_monitoring(self):
+    def stop_monitoring(self, internal_call=False):
         """Stops the network monitoring"""
         if not self.stop_event.is_set():
             self.stop_event.set()
             if self.monitor:
                 self.monitor.stop_monitoring()
             self.cleanup_pid()
-            self.logger.info("Network Monitoring has concluded")
-            if self.ui_callback:
+            if not internal_call:  # Only log and join for manual/UI stop
+                self.logger.info("Network Monitoring has concluded")
+                if self.ui_callback:
+                    self.ui_callback("Stopped")
+                if self.monitor_thread and self.monitor_thread.is_alive():
+                    self.logger.info("Joining monitor thread from UI stop")
+                    self.monitor_thread.join()
+            elif self.ui_callback:  # Ensure UI updates for internal stop
                 self.ui_callback("Stopped")
-            if self.monitor_thread and self.monitor_thread.is_alive():
-                self.monitor_thread.join()

@@ -1,6 +1,5 @@
 import tkinter as tk
 import threading
-import ctypes
 
 class NetworkMonitorUI:
     def __init__(self, app):
@@ -18,10 +17,8 @@ class NetworkMonitorUI:
         # Create status label
         self.status_label = tk.Label(self.window, text="Status: Stopped", fg="red")
         self.status_label.pack(pady=10)
-        
-        self.stop_event = threading.Event()
+    
         self.monitor_thread = None
-        
         self.app.set_ui_callback(self.update_status)
 
     def update_status(self, status):
@@ -36,21 +33,16 @@ class NetworkMonitorUI:
                 self.status_label.config(fg="red")
                 self.start_button.config(state = tk.NORMAL)
                 self.stop_button.config(state = tk.DISABLED)
-                if self.monitor_thread:
-                    self.monitor_thread.join()
-                    self.monitor_thread = None
-        self.window.after(11, _update)
+        self.window.after(1, _update)
             
     def start_monitoring(self):
         """Start monitoring in a separate thread."""
-        self.update_status("Running")
         self.monitor_thread = threading.Thread(target=self.app.start_monitoring)
         self.monitor_thread.start()
 
     def stop_monitoring(self):
         """Stop monitoring and update UI."""
         self.app.stop_monitoring()
-        self.update_status("Stopped")
 
     def run(self):
         """Start the Tkinter event loop."""
